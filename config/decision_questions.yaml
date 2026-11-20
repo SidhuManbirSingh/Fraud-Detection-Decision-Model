@@ -1,0 +1,38 @@
+is_fraud:
+  type: noul
+  instructions: >
+    Evaluate the e-commerce payment transaction JSON and decide whether this transaction is fraudulent.
+    Most transactions (~98% base rate) are legitimate; do not flag benign domestic transactions with isolated minor anomalies.
+    Strong fraud indicators include: (1) multiple payment authentication failures (AVS=FAIL, CVV=FAIL, three_ds=FAIL),
+    (2) cross-border mismatch (user_country != card_bin_country) paired with failed auth checks, web checkout, or very high shipping_distance_km,
+    (3) micro-amount card testing (amount < 5.0),
+    (4) large positive spend spikes relative to user_baseline_amount (amount_to_baseline_ratio >= 5.0 when prior_transactions_seen >= 2),
+    (5) immature accounts (account_age_days <= 90) especially on web checkout or with failed auth checks, promo usage, or cross-border cards.
+    Mature domestic app transactions where AVS, CVV, and 3DS all PASS and amount_to_baseline_ratio is normal (0.3x to 3.0x) are strongly legitimate.
+  criteria:
+    true_description: "Transaction exhibits fraudulent patterns such as unauthorized card use, card testing, account takeover, or multi-signal risk anomalies."
+    false_description: "Transaction is consistent with legitimate customer purchasing behavior."
+
+risk_severity:
+  type: score
+  instructions: >
+    Rate the overall fraud risk severity of this transaction from lowest (routine legitimate) to highest (critical fraud).
+  criteria:
+    - "Level 0 - Benign Routine: Mature account, passing AVS/CVV/3DS checks, domestic card, normal spend ratio."
+    - "Level 1 - Low Risk: Single minor risk factor (e.g., promo used, web checkout, or lone soft mismatch) on an otherwise clean mature account."
+    - "Level 2 - Moderate / Ambiguous: Cross-border mismatch or 1-2 failed authentication checks or elevated spend/distance without overwhelming fraud convergence."
+    - "Level 3 - High Risk: Compound anomalies such as new account (<= 90 days) with risk flags, cross-border web checkout with auth failures, or sharp spend spike."
+    - "Level 4 - Critical Fraud: Card-testing micro-amount (< $5), extreme spend anomaly (> 8x baseline), or triple auth failure on a high-risk/new/cross-border checkout."
+
+primary_risk_driver:
+  type: choice
+  instructions: >
+    Select the single primary risk driver (or legitimate baseline) that best explains the risk profile of this transaction.
+  criteria:
+    legitimate_routine: "Routine purchasing behavior with consistent user, payment, and geographic signals."
+    card_testing_micro_amount: "Micro-amount probe (amount < $5 or tiny fraction of baseline) typical of automated card validation."
+    spend_spike_anomaly: "Unusually large purchase amount relative to the user's baseline spend."
+    auth_failure_takeover: "Multiple failed payment security controls (AVS, CVV, and/or 3-D Secure) indicating stolen card details."
+    cross_border_mismatch: "User country differs from card BIN country combined with elevated shipping distance or web checkout risk."
+    new_account_high_risk: "Recently created account (account_age_days <= 90) showing suspicious checkout or payment risk signals."
+    promo_or_channel_abuse: "Elevated risk driven primarily by web/promo abuse patterns with moderate secondary anomalies."
