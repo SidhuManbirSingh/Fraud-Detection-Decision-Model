@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fraud-decision-model"
+version = "0.1.0"
+description = "Hybrid DMN + gemini-decision-1 fraud detection decision system"
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai>=3.2.0",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.0.0",
+    "PyYAML>=6.0",
+    "python-dotenv>=1.0.0",
+    "scikit-learn>=1.4.0",
+    "tenacity>=8.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

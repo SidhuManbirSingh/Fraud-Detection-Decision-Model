@@ -5,16 +5,18 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+_SRC_DIR = str(Path(__file__).resolve().parents[1] / "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
-from fraud_decision_model.dmn_engine import DMNEngine  # noqa: E402
-from fraud_decision_model.schemas import EnrichedTransaction  # noqa: E402
+from fraud_decision_model.dmn_engine import DMNEngine
+from fraud_decision_model.schemas import EnrichedTransaction
 
 
-def _tx(**overrides: object) -> EnrichedTransaction:
-    base = {
+def _tx(**overrides: Any) -> EnrichedTransaction:
+    base: dict[str, Any] = {
         "transaction_id": 100,
         "user_id": 10,
         "amount": 120.0,

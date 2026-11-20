@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
 
-from fraud_decision_model.schemas import EnrichedTransaction, FeatureMode
+from fraud_decision_model.schemas import CheckStatus, EnrichedTransaction, FeatureMode
 
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "transaction_id",
@@ -61,9 +60,9 @@ def load_and_quarantine(csv_path: Path | str) -> tuple[pd.DataFrame, pd.Series]:
 
 def _classify_account_maturity(account_age_days: pd.Series) -> pd.Series:
     conditions = [
-        account_age_days <= 90,
-        (account_age_days > 90) & (account_age_days <= 365),
-        account_age_days > 365,
+        (account_age_days <= 90).to_numpy(),
+        ((account_age_days > 90) & (account_age_days <= 365)).to_numpy(),
+        (account_age_days > 365).to_numpy(),
     ]
     choices = ["new_0_90d", "established_91_365d", "mature_over_365d"]
     return pd.Series(
@@ -164,12 +163,10 @@ def _sample_distinct_users_stratified(
     selected: list[int] = []
     # Proportional allocation across strata with remainder fill.
     quotas: list[tuple[pd.DataFrame, int]] = []
-    allocated = 0
     for _, grp in groups:
         q = int(np.floor(target_n * len(grp) / total_avail))
         q = min(q, len(grp))
         quotas.append((grp, q))
-        allocated += q
 
     used_ids: set[int] = set()
     for grp, q in quotas:
@@ -243,15 +240,34 @@ def sample_user_grouped_pilot(
     return pilot_df, pilot_y
 
 
+def _as_check_status(value: object) -> CheckStatus:
+    text = str(value)
+    if text == "PASS":
+        return "PASS"
+    if text == "FAIL":
+        return "FAIL"
+    raise ValueError(f"Invalid check status: {value!r}")
+
+
+def _as_feature_mode(value: object) -> FeatureMode:
+    text = str(value)
+    if text == "production_strict":
+        return "production_strict"
+    if text == "dataset_benchmark":
+        return "dataset_benchmark"
+    raise ValueError(f"Invalid feature_mode: {value!r}")
+
+
 def to_enriched_records(
     df_enriched: pd.DataFrame,
     feature_mode: FeatureMode | None = None,
 ) -> list[EnrichedTransaction]:
     """Convert an engineered DataFrame into validated EnrichedTransaction objects."""
     records: list[EnrichedTransaction] = []
-    for row in df_enriched.itertuples(index=False):
-        row_dict = row._asdict()
-        mode = feature_mode or row_dict["feature_mode"]
+    for row_dict in df_enriched.to_dict(orient="records"):
+        mode = feature_mode if feature_mode is not None else _as_feature_mode(row_dict["feature_mode"])
+        raw_failed = row_dict["failed_auth_checks"]
+        failed_checks = [str(item) for item in raw_failed] if isinstance(raw_failed, list) else []
         records.append(
             EnrichedTransaction(
                 transaction_id=int(row_dict["transaction_id"]),
@@ -269,11 +285,11 @@ def to_enriched_records(
                 channel=str(row_dict["channel"]),
                 merchant_category=str(row_dict["merchant_category"]),
                 promo_used=bool(row_dict["promo_used"]),
-                avs_check=str(row_dict["avs_check"]),
-                cvv_check=str(row_dict["cvv_check"]),
-                three_ds_auth=str(row_dict["three_ds_auth"]),
+                avs_check=_as_check_status(row_dict["avs_check"]),
+                cvv_check=_as_check_status(row_dict["cvv_check"]),
+                three_ds_auth=_as_check_status(row_dict["three_ds_auth"]),
                 auth_failures_count=int(row_dict["auth_failures_count"]),
-                failed_auth_checks=list(row_dict["failed_auth_checks"]),
+                failed_auth_checks=failed_checks,
                 tx_hour_utc=int(row_dict["tx_hour_utc"]),
                 feature_mode=mode,
             )

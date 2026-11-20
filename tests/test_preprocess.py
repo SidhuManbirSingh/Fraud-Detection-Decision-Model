@@ -9,10 +9,11 @@ from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+_SRC_DIR = str(Path(__file__).resolve().parents[1] / "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
-from fraud_decision_model.preprocess import (  # noqa: E402
+from fraud_decision_model.preprocess import (
     engineer_features,
     load_and_quarantine,
     sample_user_grouped_pilot,
@@ -162,8 +163,8 @@ class PreprocessTests(unittest.TestCase):
         )
         self.assertEqual(len(pilot_df), 12)
         self.assertEqual(int(pilot_y.sum()), 4)
-        fraud_users = set(pilot_df.loc[pilot_y.values == 1, "user_id"])
-        legit_users = set(pilot_df.loc[pilot_y.values == 0, "user_id"])
+        fraud_users = set(pilot_df.loc[pilot_y.to_numpy() == 1, "user_id"])
+        legit_users = set(pilot_df.loc[pilot_y.to_numpy() == 0, "user_id"])
         self.assertEqual(len(fraud_users & legit_users), 0)
 
 
