@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -104,6 +105,7 @@ class FraudDecisionPipeline:
         run_name: str = "pilot",
         resume: bool = True,
         dry_run: bool = False,
+        show_progress: bool = True,
     ) -> PipelineResult:
         """Execute hybrid or model-only scoring across `records` with resume & budget safety."""
         out_dir = Path(output_dir)
@@ -163,15 +165,27 @@ class FraudDecisionPipeline:
             _append_jsonl(checkpoint_path, final_dec.model_dump_json())
             completed[final_dec.transaction_id] = final_dec
 
+        if show_progress:
+            print(
+                f"[pipeline] Run '{run_name}': total={len(records)} | resumed={resumed_count} | "
+                f"dmn_resolved={len(dmn_finalized)} | escalated_to_model={len(escalated)} "
+                f"(est_cost=${est_cost:.4f})",
+                flush=True,
+            )
+
         failed_count = 0
         if escalated:
             if self.decision_client is None:
                 raise RuntimeError("decision_client is required when transactions escalate to the model.")
             client = self.decision_client
             io_lock = threading.Lock()
+            total_esc = len(escalated)
+            done_esc = 0
+            t_start = time.monotonic()
+            log_every = max(1, min(25, total_esc // 10 if total_esc >= 10 else 1))
 
             def _score_one(tx: EnrichedTransaction, rule_id: str) -> None:
-                nonlocal failed_count
+                nonlocal failed_count, done_esc
                 try:
                     model_res = client.evaluate_transaction(tx)
                     final_dec = client.build_final_decision(
@@ -184,6 +198,9 @@ class FraudDecisionPipeline:
                     with io_lock:
                         _append_jsonl(checkpoint_path, line)
                         completed[tx.transaction_id] = final_dec
+                        done_esc += 1
+                        cur_done = done_esc
+                        cur_fail = failed_count
                 except Exception as exc:  # noqa: BLE001
                     err_line = json.dumps(
                         {
@@ -194,12 +211,38 @@ class FraudDecisionPipeline:
                     )
                     with io_lock:
                         failed_count += 1
+                        done_esc += 1
                         _append_jsonl(dlq_path, err_line)
+                        cur_done = done_esc
+                        cur_fail = failed_count
 
-            with ThreadPoolExecutor(max_workers=self.concurrency) as executor:
+                if show_progress and (cur_done % log_every == 0 or cur_done == total_esc):
+                    elapsed = max(0.001, time.monotonic() - t_start)
+                    rate = cur_done / elapsed
+                    eta_s = (total_esc - cur_done) / rate if rate > 0 else 0.0
+                    pct = 100.0 * cur_done / total_esc
+                    print(
+                        f"[pipeline] {cur_done}/{total_esc} ({pct:5.1f}%) | "
+                        f"{rate:.2f} req/s | elapsed {elapsed:.1f}s | ETA {eta_s:.0f}s | dlq={cur_fail}",
+                        flush=True,
+                    )
+
+            executor = ThreadPoolExecutor(max_workers=self.concurrency)
+            try:
                 futures = [executor.submit(_score_one, tx, rule_id) for tx, rule_id in escalated]
                 for fut in as_completed(futures):
                     fut.result()
+            except KeyboardInterrupt:
+                executor.shutdown(wait=False, cancel_futures=True)
+                if show_progress:
+                    print(
+                        f"\n[pipeline] Interrupted. {len(completed)}/{len(records)} decisions are safely "
+                        f"checkpointed in {checkpoint_path}. Re-run the same command to resume.",
+                        flush=True,
+                    )
+                raise
+            else:
+                executor.shutdown(wait=True)
 
         record_ids = {tx.transaction_id for tx in records}
         ordered_decisions = [completed[tx.transaction_id] for tx in records if tx.transaction_id in completed]

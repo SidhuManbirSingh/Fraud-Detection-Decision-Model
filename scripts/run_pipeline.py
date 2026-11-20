@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--fraud-threshold", type=float, default=0.50, help="Probability cutoff for fraud.")
     parser.add_argument("--concurrency", type=int, default=8, help="Max concurrent API requests.")
-    parser.add_argument("--rpm", type=int, default=120, help="Requests-per-minute rate limit.")
+    parser.add_argument("--rpm", type=int, default=300, help="Requests-per-minute rate limit.")
     parser.add_argument("--max-cost-usd", type=float, default=5.0, help="Hard USD budget ceiling.")
     parser.add_argument("--dry-run", action="store_true", help="Estimate DMN routing & cost without API calls.")
     parser.add_argument("--no-resume", action="store_true", help="Ignore prior checkpoints and start fresh.")
@@ -110,13 +110,16 @@ def main() -> int:
         concurrency=args.concurrency,
     )
     run_name = f"{args.mode}_{routing_mode}_{feature_mode}"
-    result = pipeline.run(
-        records=records,
-        output_dir=args.output_dir,
-        run_name=run_name,
-        resume=not args.no_resume,
-        dry_run=args.dry_run,
-    )
+    try:
+        result = pipeline.run(
+            records=records,
+            output_dir=args.output_dir,
+            run_name=run_name,
+            resume=not args.no_resume,
+            dry_run=args.dry_run,
+        )
+    except KeyboardInterrupt:
+        return 130
 
     if args.dry_run:
         print(f"=== DRY RUN ({run_name}) ===", flush=True)
