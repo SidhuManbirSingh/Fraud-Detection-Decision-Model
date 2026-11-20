@@ -1,0 +1,51 @@
+hit_policy: FIRST_HIT
+rules:
+  - rule_id: DMN_HARD_DECLINE_CARD_TESTING
+    priority: 1
+    description: Micro-amount card-testing probe below $5.00 legitimate floor.
+    action: AUTO_DECLINE
+    is_fraud: true
+    fraud_probability: 0.99
+    confidence_score: 0.99
+    primary_risk_driver: card_testing_micro_amount
+    conditions:
+      max_amount_exclusive: 5.0
+    reasoning_template: "DMN rule DMN_HARD_DECLINE_CARD_TESTING: micro-amount (${amount:.2f} < $5.00) indicates card-testing probe."
+
+  - rule_id: DMN_HARD_DECLINE_EXTREME_SPIKE
+    priority: 2
+    description: Spend exceeds 10x baseline with sufficient prior user history (or benchmark mode).
+    action: AUTO_DECLINE
+    is_fraud: true
+    fraud_probability: 0.98
+    confidence_score: 0.98
+    primary_risk_driver: spend_spike_anomaly
+    conditions:
+      min_amount_ratio_exclusive: 10.0
+      min_prior_tx_strict: 3
+    reasoning_template: "DMN rule DMN_HARD_DECLINE_EXTREME_SPIKE: amount ratio {amount_to_baseline_ratio:.2f}x exceeds 10.0x baseline (${baseline_avg_amount:.2f})."
+
+  - rule_id: DMN_FAST_APPROVE_ROUTINE
+    priority: 3
+    description: Mature domestic transaction passing all auth checks within normal spend and distance range.
+    action: AUTO_APPROVE
+    is_fraud: false
+    fraud_probability: 0.01
+    confidence_score: 0.97
+    primary_risk_driver: legitimate_routine
+    conditions:
+      min_account_age_days_exclusive: 90
+      required_auth_failures: 0
+      require_domestic: true
+      max_shipping_distance_km: 500.0
+      min_amount_inclusive: 5.0
+      min_amount_ratio_inclusive: 0.2
+      max_amount_ratio_inclusive: 3.0
+    reasoning_template: "DMN rule DMN_FAST_APPROVE_ROUTINE: mature account ({account_age_days}d), 0 auth failures, domestic, normal spend ({amount_to_baseline_ratio:.2f}x)."
+
+  - rule_id: DMN_GREY_ZONE_ESCALATE
+    priority: 4
+    description: Default catch-all routing ambiguous or elevated-risk cases to gemini-decision-1.
+    action: ESCALATE_TO_MODEL
+    conditions: {}
+    reasoning_template: "Escalated to gemini-decision-1: transaction falls outside deterministic fast-path rules."
